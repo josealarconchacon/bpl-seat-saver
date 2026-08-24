@@ -1,0 +1,27 @@
+name: BPL Registration
+on:
+  schedule:
+    - cron: "10 14 * * 2" # Tuesday 14:10 UTC = 10:10am ET
+  workflow_dispatch:
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - run: node register.js
+        env:
+          BPL_EMAIL: ${{ secrets.BPL_EMAIL }}
+          BPL_FIRST_NAME: ${{ secrets.BPL_FIRST_NAME }}
+          BPL_LAST_NAME: ${{ secrets.BPL_LAST_NAME }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: run-screenshots
+          path: "*.png"

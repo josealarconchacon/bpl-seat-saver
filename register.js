@@ -14,11 +14,10 @@ async function isRegistrationOpen(page) {
 async function fillAndSubmit(page) {
   console.log("Attempting to fill form...");
 
-  const emailField = page
-    .getByLabel(/email/i)
-    .or(page.locator('input[type="email"]'));
-  const firstNameField = page.getByLabel(/first name/i);
-  const lastNameField = page.getByLabel(/last name/i);
+  // Target the visible field specifically, not the ambiguous label match
+  const emailField = page.getByPlaceholder("Your Email");
+  const firstNameField = page.getByLabel(/first name/i).first();
+  const lastNameField = page.getByLabel(/last name/i).first();
 
   await emailField.fill(process.env.BPL_EMAIL);
   await firstNameField.fill(process.env.BPL_FIRST_NAME);

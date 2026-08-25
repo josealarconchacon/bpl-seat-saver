@@ -1,70 +1,56 @@
 require("dotenv").config();
 const { chromium } = require("playwright");
-
-const URL =
-  "https://www.bklynlibrary.org/calendar/babies-books-ages-0-18-brooklyn-heights-library-20260827-1030am";
-const POLL_INTERVAL_MS = 5000;
-const MAX_WAIT_MINUTES = 25;
-
-async function isRegistrationOpen(page) {
-  const bodyText = await page.locator("body").textContent();
-  return !bodyText.includes("Registration is coming soon");
-}
-
-async function fillAndSubmit(page) {
-  console.log("Attempting to fill form...");
-
-  // Target the visible field specifically, not the ambiguous label match
-  const emailField = page.getByPlaceholder("Your Email");
-  const firstNameField = page.getByLabel(/first name/i).first();
-  const lastNameField = page.getByLabel(/last name/i).first();
-
-  await emailField.fill(process.env.BPL_EMAIL);
-  await firstNameField.fill(process.env.BPL_FIRST_NAME);
-  await lastNameField.fill(process.env.BPL_LAST_NAME);
-
-  const registerButton = page.getByRole("button", { name: /register/i });
-  await registerButton.click();
-
-  await page.waitForTimeout(2000);
-  await page.screenshot({ path: "confirmation.png", fullPage: true });
-  console.log(
-    "Submitted. Screenshot saved as confirmation.png — VERIFY MANUALLY.",
-  );
-}
+const config = require("./src/config");
+const { isRegistrationOpen } = require("./src/detector");
+const { fillAndSubmit } = require("./src/registrar");
 
 async function run() {
-  const browser = await chromium.launch({ headless: true }); // MUST be true for Actions
+  const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
-  await page.goto(URL);
 
-  const startTime = Date.now();
-  const maxWaitMs = MAX_WAIT_MINUTES * 60 * 1000;
-
-  while (Date.now() - startTime < maxWaitMs) {
-    try {
-      const open = await isRegistrationOpen(page);
-
-      if (open) {
-        console.log("Registration is OPEN. Attempting to register now.");
-        await fillAndSubmit(page);
-        break;
-      }
-
-      console.log("Still not open. Rechecking in 5s...");
-    } catch (err) {
-      console.log("Recoverable error, retrying:", err.message);
-      await page.screenshot({
-        path: `error-${Date.now()}.png`,
-        fullPage: true,
-      });
-    }
-
-    await page.waitForTimeout(POLL_INTERVAL_MS);
-    await page.reload().catch(() => {});
+  try {
+    await page.goto(config.URL, { timeout: 60000 }); // give it more room, 60s instead of default 30s
+  } catch (err) {
+    console.log("FATAL: could not load registration page:", err.message);
+    await browser.close();
+    process.exit(1);
   }
 
-  await browser.close();
+  const startTime = Date.now();
+  const maxWaitMs = config.MAX_WAIT_MINUTES * 60 * 1000;
+
+  try {
+    while (Date.now() - startTime < maxWaitMs) {
+      try {
+        const open = await isRegistrationOpen(page);
+
+        if (open) {
+          console.log("Registration is OPEN. Attempting to register now.");
+          const result = await fillAndSubmit(page);
+
+          if (result.success) {
+            console.log("SUCCESS — registered.");
+          } else {
+            console.log(`FAILURE — ${result.reason}. Check confirmation.png.`);
+          }
+          break;
+        }
+
+        console.log("Still not open. Rechecking in 5s...");
+      } catch (err) {
+        console.log("Recoverable error, retrying:", err.message);
+        await page.screenshot({
+          path: `error-${Date.now()}.png`,
+          fullPage: true,
+        });
+      }
+
+      await page.waitForTimeout(config.POLL_INTERVAL_MS);
+      await page.reload().catch(() => {});
+    }
+  } finally {
+    await browser.close();
+  }
 }
 
 run();
